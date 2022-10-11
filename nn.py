@@ -1,3 +1,4 @@
+from audioop import bias
 import sys
 import os
 import numpy as np
@@ -12,7 +13,7 @@ class Net(object):
 	'''
 	'''
 
-	def __init__(self, num_layers, num_units):
+	def __init__(self, num_layers, hidden_size):
 		'''
 		Initialize the neural network.
 		Create weights and biases.
@@ -34,8 +35,10 @@ class Net(object):
 			num_layers : Number of HIDDEN layers.
 			num_units : Number of units in each Hidden layer.
 		'''
-		self.num_layers = num_layers
-		self.num_units = num_units
+		self.num_layers = num_layers + 1
+		self.hidden_size = hidden_size
+		self.a_states = []
+		self.h_states = []
 
 		self.biases = []
 		self.weights = []
@@ -43,16 +46,25 @@ class Net(object):
 
 			if i==0:
 				# Input layer
-				self.weights.append(np.random.uniform(-1, 1, size=(NUM_FEATS, self.num_units)))
+				self.weights.append(np.random.uniform(-1, 1, size=(NUM_FEATS, self.hidden_size[i])))
 			else:
 				# Hidden layer
-				self.weights.append(np.random.uniform(-1, 1, size=(self.num_units, self.num_units)))
+				self.weights.append(np.random.uniform(-1, 1, size=(self.hidden_size[i], self.hidden_size[i+1])))
 
-			self.biases.append(np.random.uniform(-1, 1, size=(self.num_units, 1)))
+			self.biases.append(np.random.uniform(-1, 1, size=(self.hidden_size[i], 1)))
 
 		# Output layer
 		self.biases.append(np.random.uniform(-1, 1, size=(1, 1)))
-		self.weights.append(np.random.uniform(-1, 1, size=(self.num_units, 1)))
+		self.weights.append(np.random.uniform(-1, 1, size=(self.hidden_size[-1], 1)))
+
+	def relu(self, X):
+		return np.maximum(0, X)
+	
+	def d_relu(self, h):
+		return (h > 0) * 1
+	
+	def d_loss(self, y_hat, y):
+		return (y_hat - y)
 
 	def __call__(self, X):
 		'''
@@ -69,9 +81,19 @@ class Net(object):
 		----------
 			y : Output of the network, numpy array of shape m x 1
 		'''
-		raise NotImplementedError
+		out = X
+		self.a_states.append(X)
+		self.h_states.append(X)
+		for i in range(self.num_layers):
+			h = np.dot(out, self.weights[i]) + self.biases[i].T
+			out = self.relu(h)
+			self.a_states.append(out)
+			self.h_states.append(h)
 
-	def backward(self, X, y, lamda):
+		# h = np.dot(out, self.weights[-1]) + self.biases[-1].T
+		return h
+
+	def backward(self, X, y, y_hat):
 		'''
 		Compute and return gradients loss with respect to weights and biases.
 		(dL/dW and dL/db)
@@ -89,7 +111,32 @@ class Net(object):
 
 		Hint: You need to do a forward pass before performing backward pass.
 		'''
-		raise NotImplementedError
+		# d_W and d_b saves the accumulated gradients
+		d_W = [np.zeros(w.shape) for w in self.weights]
+		d_b = [np.zeros(b.shape) for b in self.biases]
+		derivative = self.d_loss(y_hat, y)
+		for i, (xi, yi) in enumerate(zip(X, y)):
+			del_W = [np.zeros(w.shape) for w in self.weights]
+			del_b = [np.zeros(b.shape) for b in self.biases]
+			
+			del_b[-1] = derivative
+			del_W[-1] = np.dot(self.a_states[-2].T, derivative)
+
+			for i in range(2, self.num_layers):
+				h = self.h_states[-i]
+				relu_dash = self.d_relu(h)
+				derivative = np.dot(self.weights[-i+1].T, derivative) * relu_dash
+				del_b[-i] = derivative
+				del_W[-i] = np.dot(self.a_states[-i-1].T, derivative)
+
+			d_W = [dw + delw for dw, delw in zip(d_W, del_W)]
+			d_b = [db + delb for db, delb in zip(d_b, del_b)]
+			d_W = [(dw) / X.shape[0] for dw in d_W]
+			d_b = [(db) / X.shape[0] for db in d_b]
+			#instead of accumulating, can create a list of all derivative of weights
+		return d_W, d_b
+
+	
 
 
 class Optimizer(object):
@@ -107,7 +154,7 @@ class Optimizer(object):
 		Hint: You can use the class members to track various states of the
 		optimizer.
 		'''
-		raise NotImplementedError
+		self.learning_rate = learning_rate
 
 	def step(self, weights, biases, delta_weights, delta_biases):
 		'''
@@ -117,8 +164,12 @@ class Optimizer(object):
 			biases: Current biases of the network.
 			delta_weights: Gradients of weights with respect to loss.
 			delta_biases: Gradients of biases with respect to loss.
+			To do: RMS prop, momentum, ADAM,adagrad, adaboost
 		'''
-		raise NotImplementedError
+		#right now this function receives sum of all gradients
+		weights = [w - self.learning_rate*dw for w, dw in zip(weights, delta_weights)]
+		biases = [b - self.learning_rate*db for b, db in zip(biases, delta_biases)]
+		return weights, biases
 
 
 def loss_mse(y, y_hat):
@@ -134,7 +185,7 @@ def loss_mse(y, y_hat):
 	----------
 		MSE loss between y and y_hat.
 	'''
-	raise NotImplementedError
+	return np.mean((y_hat - y) ** 2)
 
 def loss_regularization(weights, biases):
 	'''
@@ -148,7 +199,12 @@ def loss_regularization(weights, biases):
 	----------
 		l2 regularization loss 
 	'''
-	raise NotImplementedError
+	sum = 0
+	for w in weights:
+		sum += np.sum(w ** 2)
+	for b in biases:
+		sum += np.sum(b ** 2)
+	return sum
 
 def loss_fn(y, y_hat, weights, biases, lamda):
 	'''
@@ -165,7 +221,7 @@ def loss_fn(y, y_hat, weights, biases, lamda):
 	----------
 		l2 regularization loss 
 	'''
-	raise NotImplementedError
+	return loss_mse(y, y_hat) + lamda*loss_regularization(weights, biases)
 
 def rmse(y, y_hat):
 	'''
@@ -180,7 +236,7 @@ def rmse(y, y_hat):
 	----------
 		RMSE between y and y_hat.
 	'''
-	raise NotImplementedError
+	return np.sqrt(loss_mse(y, y_hat))
 
 def cross_entropy_loss(y, y_hat):
 	'''
@@ -223,9 +279,11 @@ def train(
 			batch_input = train_input[i:i+batch_size]
 			batch_target = train_target[i:i+batch_size]
 			pred = net(batch_input)
-
+			batch_target = batch_target.values.reshape(-1,1)
+			# print(pred.shape)
+			# print(batch_target.shape)
 			# Compute gradients of loss w.r.t. weights and biases
-			dW, db = net.backward(batch_input, batch_target, lamda)
+			dW, db = net.backward(batch_input, batch_target, pred)
 
 			# Get updated weights based on current weights and gradients
 			weights_updated, biases_updated = optimizer.step(net.weights, net.biases, dW, db)
@@ -275,7 +333,18 @@ def read_data():
 	'''
 	Read the train, dev, and test datasets
 	'''
-	raise NotImplementedError
+	TRAIN_FILE = "regression/data/train.csv"
+	DEV_FILE = "regression/data/dev.csv"
+	TEST_FILE = "regression/data/test.csv"
+	train_df = pd.read_csv(TRAIN_FILE)
+	test_df = pd.read_csv(TEST_FILE)
+	dev_df = pd.read_csv(DEV_FILE)
+
+	train_input = train_df[train_df.columns[1:]]
+	train_target = train_df[train_df.columns[0]]
+	dev_input = dev_df[dev_df.columns[1:]]
+	dev_target = dev_df[dev_df.columns[0]]
+	test_input = test_df[test_df.columns]
 
 	return train_input, train_target, dev_input, dev_target, test_input
 
@@ -287,11 +356,11 @@ def main():
 	batch_size = 256
 	learning_rate = 0.001
 	num_layers = 1
-	num_units = 64
+	hidden_size = [64]
 	lamda = 0.1 # Regularization Parameter
 
 	train_input, train_target, dev_input, dev_target, test_input = read_data()
-	net = Net(num_layers, num_units)
+	net = Net(num_layers, hidden_size)
 	optimizer = Optimizer(learning_rate)
 	train(
 		net, optimizer, lamda, batch_size, max_epochs,
