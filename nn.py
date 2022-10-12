@@ -113,30 +113,7 @@ class Net(object):
 		Hint: You need to do a forward pass before performing backward pass.
 		'''
 		# d_W and d_b saves the accumulated gradients
-		d_W = [np.zeros(w.shape) for w in self.weights]
-		d_b = [np.zeros(b.shape) for b in self.biases]
-		# derivative = self.d_loss(y_hat, y)
-		for i, (xi, yi) in enumerate(zip(X, y)):
-			derivative = (self.d_loss(y_hat[i], yi)).reshape(1, 1)
-			# print(i)
-			del_W = [np.zeros(w.shape) for w in self.weights]
-			del_b = [np.zeros(b.shape) for b in self.biases]
-			
-			del_b[-1] = derivative
-			del_W[-1] = np.dot(self.a_states[-2].reshape(-1,1), derivative)
-
-			for j in range(2, self.num_layers):
-				h = self.h_states[i, -j]
-				relu_dash = self.d_relu(h)
-				derivative = np.dot(self.weights[-j+1].T, derivative) * relu_dash
-				del_b[-j] = derivative
-				del_W[-j] = np.dot(self.a_states[-j-1].reshape, derivative)
-
-			d_W = [dw + delw for dw, delw in zip(d_W, del_W)]
-			d_b = [db + delb for db, delb in zip(d_b, del_b)]
-			d_W = [dw / X.shape[0] for dw in d_W]
-			d_b = [db / X.shape[0] for db in d_b]
-			#instead of accumulating, can create a list of all derivative of weights
+		
 		return d_W, d_b
 
 	
