@@ -123,14 +123,14 @@ class Net(object):
 			del_b = [np.zeros(b.shape) for b in self.biases]
 			
 			del_b[-1] = derivative
-			del_W[-1] = np.dot(self.a_states[-2][i].reshape(-1,1), derivative)
+			del_W[-1] = np.dot(self.a_states[-2].reshape(-1,1), derivative)
 
 			for j in range(2, self.num_layers):
 				h = self.h_states[i, -j]
 				relu_dash = self.d_relu(h)
 				derivative = np.dot(self.weights[-j+1].T, derivative) * relu_dash
 				del_b[-j] = derivative
-				del_W[-j] = np.dot(self.a_states[-j-1][i].reshape, derivative)
+				del_W[-j] = np.dot(self.a_states[-j-1].reshape, derivative)
 
 			d_W = [dw + delw for dw, delw in zip(d_W, del_W)]
 			d_b = [db + delb for db, delb in zip(d_b, del_b)]
@@ -315,7 +315,7 @@ def train(
 
 	# After running `max_epochs` (for Part 1) epochs OR early stopping (for Part 2), compute the RMSE on dev data.
 	dev_pred = net(dev_input)
-	dev_rmse = rmse(dev_target, dev_pred)
+	dev_rmse = rmse(dev_target.values.reshape(-1,1), dev_pred)
 
 	print('RMSE on dev data: {:.5f}'.format(dev_rmse))
 
@@ -336,7 +336,8 @@ def get_test_data_predictions(net, inputs):
 		predictions (optional): Predictions obtained from forward pass
 								on test data, numpy array of shape m x 1
 	'''
-	raise NotImplementedError
+	pred = net(inputs)
+
 
 def min_max_scaler(x):
 	x_min = np.min(x, axis=0)
@@ -359,7 +360,7 @@ def read_data():
 	train_target = min_max_scaler(train_df[train_df.columns[0]])
 	dev_input = min_max_scaler(dev_df[dev_df.columns[1:]])
 	dev_target = min_max_scaler(dev_df[dev_df.columns[0]])
-	test_input = test_df[test_df.columns]
+	test_input = min_max_scaler(test_df[test_df.columns])
 
 	return train_input, train_target, dev_input, dev_target, test_input
 
@@ -367,7 +368,7 @@ def read_data():
 def main():
 
 	# Hyper-parameters 
-	max_epochs = 50
+	max_epochs = 1
 	batch_size = 256
 	learning_rate = 0.001
 	num_layers = 1
