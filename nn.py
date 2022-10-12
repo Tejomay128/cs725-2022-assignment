@@ -42,8 +42,7 @@ class Net(object):
 
 		self.biases = []
 		self.weights = []
-		for i in range(num_layers):
-
+		for i in range(self.num_layers - 1):
 			if i==0:
 				# Input layer
 				self.weights.append(np.random.uniform(-1, 1, size=(NUM_FEATS, self.hidden_size[i])))
@@ -84,7 +83,9 @@ class Net(object):
 		out = X
 		self.a_states.append(X)
 		self.h_states.append(X)
+		# print(self.num_layers)
 		for i in range(self.num_layers):
+			# print(f'weights = {self.weights[i].shape}  biases = {self.biases[i].shape}')
 			h = np.dot(out, self.weights[i]) + self.biases[i].T
 			out = self.relu(h)
 			self.a_states.append(out)
@@ -114,25 +115,27 @@ class Net(object):
 		# d_W and d_b saves the accumulated gradients
 		d_W = [np.zeros(w.shape) for w in self.weights]
 		d_b = [np.zeros(b.shape) for b in self.biases]
-		derivative = self.d_loss(y_hat, y)
+		# derivative = self.d_loss(y_hat, y)
 		for i, (xi, yi) in enumerate(zip(X, y)):
+			derivative = (self.d_loss(y_hat[i], yi)).reshape(1, 1)
+			# print(i)
 			del_W = [np.zeros(w.shape) for w in self.weights]
 			del_b = [np.zeros(b.shape) for b in self.biases]
 			
 			del_b[-1] = derivative
-			del_W[-1] = np.dot(self.a_states[-2].T, derivative)
+			del_W[-1] = np.dot(self.a_states[-2][i].reshape(-1,1), derivative)
 
-			for i in range(2, self.num_layers):
-				h = self.h_states[-i]
+			for j in range(2, self.num_layers):
+				h = self.h_states[i, -j]
 				relu_dash = self.d_relu(h)
-				derivative = np.dot(self.weights[-i+1].T, derivative) * relu_dash
-				del_b[-i] = derivative
-				del_W[-i] = np.dot(self.a_states[-i-1].T, derivative)
+				derivative = np.dot(self.weights[-j+1].T, derivative) * relu_dash
+				del_b[-j] = derivative
+				del_W[-j] = np.dot(self.a_states[-j-1][i].reshape, derivative)
 
 			d_W = [dw + delw for dw, delw in zip(d_W, del_W)]
 			d_b = [db + delb for db, delb in zip(d_b, del_b)]
-			d_W = [(dw) / X.shape[0] for dw in d_W]
-			d_b = [(db) / X.shape[0] for db in d_b]
+			d_W = [dw / X.shape[0] for dw in d_W]
+			d_b = [db / X.shape[0] for db in d_b]
 			#instead of accumulating, can create a list of all derivative of weights
 		return d_W, d_b
 
@@ -204,6 +207,7 @@ def loss_regularization(weights, biases):
 		sum += np.sum(w ** 2)
 	for b in biases:
 		sum += np.sum(b ** 2)
+	# print(f'Sum = {sum}')
 	return sum
 
 def loss_fn(y, y_hat, weights, biases, lamda):
@@ -221,6 +225,7 @@ def loss_fn(y, y_hat, weights, biases, lamda):
 	----------
 		l2 regularization loss 
 	'''
+	# print(loss_mse(y, y_hat))
 	return loss_mse(y, y_hat) + lamda*loss_regularization(weights, biases)
 
 def rmse(y, y_hat):
@@ -275,6 +280,7 @@ def train(
 
 	for e in range(max_epochs):
 		epoch_loss = 0.
+		step = 1
 		for i in range(0, m, batch_size):
 			batch_input = train_input[i:i+batch_size]
 			batch_target = train_target[i:i+batch_size]
@@ -296,7 +302,10 @@ def train(
 			batch_loss = loss_fn(batch_target, pred, net.weights, net.biases, lamda)
 			epoch_loss += batch_loss
 
-			#print(e, i, rmse(batch_target, pred), batch_loss)
+			if (step)%50 == 0:
+				# print(e, i, rmse(batch_target, pred), batch_loss)
+				print(f'Epochs:{e}\tstep:{step}\tbatch_loss:{batch_loss:.4f}')
+			step += 1
 
 		#print(e, epoch_loss)
 
@@ -329,6 +338,12 @@ def get_test_data_predictions(net, inputs):
 	'''
 	raise NotImplementedError
 
+def min_max_scaler(x):
+	x_min = np.min(x, axis=0)
+	x_max = np.max(x,axis=0)
+	x = np.divide((x - x_min), (x_max - x_min))
+	return x
+
 def read_data():
 	'''
 	Read the train, dev, and test datasets
@@ -340,10 +355,10 @@ def read_data():
 	test_df = pd.read_csv(TEST_FILE)
 	dev_df = pd.read_csv(DEV_FILE)
 
-	train_input = train_df[train_df.columns[1:]]
-	train_target = train_df[train_df.columns[0]]
-	dev_input = dev_df[dev_df.columns[1:]]
-	dev_target = dev_df[dev_df.columns[0]]
+	train_input = min_max_scaler(train_df[train_df.columns[1:]])
+	train_target = min_max_scaler(train_df[train_df.columns[0]])
+	dev_input = min_max_scaler(dev_df[dev_df.columns[1:]])
+	dev_target = min_max_scaler(dev_df[dev_df.columns[0]])
 	test_input = test_df[test_df.columns]
 
 	return train_input, train_target, dev_input, dev_target, test_input
